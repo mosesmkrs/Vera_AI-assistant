@@ -6,6 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://vera:vera@localhost:5433/vera"
     llm_api_key: str = ""
+    llm_provider: str = "openai"
+    llm_model: str = "gpt-6-luna"
     email_api_key: str = ""
     jwt_secret: str = "development-only-change-me"
     embedding_model_name: str = "intfloat/multilingual-e5-base"

@@ -19,7 +19,7 @@ Document status and replacement history are part of the design. A newer document
 
 ## Project status
 
-Development is proceeding in stages. **Stages 1–5 are implemented at the backend-module level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, a health endpoint, an approval-gated ingestion module, keyword, vector, and hybrid retrieval, and evidence validation. Admin APIs and screens that perform approval are planned for Stage 7. The validated evidence module is not yet wired into a student question endpoint or answer-generation flow; those are subsequent stages.
+Development is proceeding in stages. **Stages 1–6 are implemented at the backend-module level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, a health endpoint, an approval-gated ingestion module, keyword, vector, and hybrid retrieval, evidence validation, and a headless student question endpoint with grounded answer generation and abstention. Admin APIs and screens for approving content and resolving escalations are planned for Stage 7.
 
 ## Current architecture
 
@@ -42,6 +42,26 @@ The ingestion module accepts PDF and UTF-8 `.txt` files or typed text. Pending d
 The retrieval module exposes keyword search using PostgreSQL full-text search, embedding search using pgvector cosine similarity, and hybrid search using Reciprocal Rank Fusion. All three return ranked chunks with document citation metadata and filter out inactive, not-yet-effective, and expired documents. They are backend functions; no student question API is wired to them yet.
 
 The evidence validation module rechecks each retrieved chunk against its stored document, including approval status and effective/expiry dates. It estimates a retrieval confidence score, marks low-confidence results as insufficient, and flags the two highest-ranked results from different authority offices as conflicting unless their documents are linked by supersession. The confidence score is a retrieval heuristic, not a guarantee that the answer is factually correct; its threshold is configurable and should be calibrated against real questions and reviewed sources. The module returns an assessment for a later question-answering flow to use; it does not generate answers or create escalation logs on its own.
+
+`POST /ask` runs hybrid retrieval followed by evidence validation. When evidence is sufficient, Vera calls the configured LLM at temperature zero and returns its answer, confidence status, and source excerpts as citations. When evidence is missing, weak, or conflicting, Vera abstains, records the question in `questions_log`, and marks it escalated without calling the LLM. The optional `student_contact` is stored only on that question-log row for the later notification workflow. The default OpenAI model is `gpt-6-luna`; the client sets its reasoning effort to `none` so temperature zero remains supported. Set `LLM_API_KEY`, `LLM_PROVIDER` (`openai` or `anthropic`), and `LLM_MODEL` before asking questions that have sufficient evidence; the missing-evidence path does not require an LLM key.
+
+To try the answerable path before Stage 7 admin endpoints exist, a local-only helper seeds one clearly labeled approved test document into the configured database. It uses the configured embedding model and removes the test document, chunks, test admin (when unused), and any answer logs linked to that document when you run `cleanup`:
+
+```powershell
+python backend/scripts/stage6_test_data.py seed
+# Start/restart the API in another terminal, then ask the printed test question at /ask.
+python backend/scripts/stage6_test_data.py cleanup
+```
+
+If the embedding model is already cached but Hugging Face is unreachable, set `$env:HF_HUB_OFFLINE = '1'` and `$env:TRANSFORMERS_OFFLINE = '1'` in that terminal before running the seed command. The configured LLM provider still needs to be reachable to receive a generated answer.
+
+Example request:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/ask `
+  -ContentType 'application/json' `
+  -Body '{"question":"How do I request a registration extension?"}'
+```
 
 To compare all three methods on your own PDF or UTF-8 `.txt` files, use the temporary smoke-test script below. It creates active test documents in an isolated database schema, uses the configured real embedding model, prints ranked source passages for each query, and removes the temporary schema when finished. It does not add the files to your normal application data.
 
@@ -110,6 +130,7 @@ With the virtual environment active and the database running:
 python -m pytest backend/tests/test_ingestion.py -q
 python -m pytest backend/tests/test_retrieval.py -q
 python -m pytest backend/tests/test_validation.py -q
+python -m pytest backend/tests/test_pipeline.py -q
 python -m pytest -q
 ruff check backend/app backend/tests
 ```
@@ -139,7 +160,8 @@ Configuration is managed from the root `.env` file. The current variables are:
 | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Local PostgreSQL container credentials |
 | `DATABASE_URL` | Database URL for commands running on the host |
 | `DATABASE_URL_DOCKER` | Database URL for the API container |
-| `LLM_API_KEY` | Future language-model provider integration |
+| `LLM_API_KEY` | API key for the selected answer-generation provider |
+| `LLM_PROVIDER`, `LLM_MODEL` | Answer-generation provider (`openai` or `anthropic`) and model name |
 | `EMAIL_API_KEY` | Future email or notification provider integration |
 | `JWT_SECRET` | Secret reserved for authentication/session features |
 | `EMBEDDING_MODEL_NAME` | Sentence-transformer model used for document embeddings |

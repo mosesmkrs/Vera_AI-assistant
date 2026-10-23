@@ -23,6 +23,8 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:?Set DATABASE_URL_DOCKER in .env}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
+      LLM_MODEL: ${LLM_MODEL:-gpt-6-luna}
       EMAIL_API_KEY: ${EMAIL_API_KEY:-}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-intfloat/multilingual-e5-base}
