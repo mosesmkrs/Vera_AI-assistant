@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import and_, or_, text
@@ -20,6 +21,7 @@ class ScoredChunk:
     content: str
     score: float
     rank: int
+    retrieval_method: Literal["keyword", "embedding", "hybrid"] = "hybrid"
 
 
 def current_document_filters():
@@ -32,7 +34,13 @@ def current_document_filters():
     )
 
 
-def scored_chunk(chunk: DocumentChunk, document: Document, score: float, rank: int) -> ScoredChunk:
+def scored_chunk(
+    chunk: DocumentChunk,
+    document: Document,
+    score: float,
+    rank: int,
+    retrieval_method: Literal["keyword", "embedding", "hybrid"],
+) -> ScoredChunk:
     return ScoredChunk(
         chunk_id=chunk.id,
         document_id=document.id,
@@ -45,6 +53,7 @@ def scored_chunk(chunk: DocumentChunk, document: Document, score: float, rank: i
         content=chunk.content,
         score=score,
         rank=rank,
+        retrieval_method=retrieval_method,
     )
 
 

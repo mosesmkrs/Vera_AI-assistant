@@ -59,6 +59,7 @@ async def hybrid_search(
             content=item.content,
             score=score,
             rank=rank,
+            retrieval_method="hybrid",
         )
         for rank, (item, score) in enumerate(ordered, start=1)
     ]

@@ -46,6 +46,6 @@ async def embedding_search(
     result = await session.execute(statement)
     rows = result.all()
     return [
-        scored_chunk(chunk, document, 1.0 - float(cosine_distance), rank_index)
+        scored_chunk(chunk, document, 1.0 - float(cosine_distance), rank_index, "embedding")
         for rank_index, (chunk, document, cosine_distance) in enumerate(rows, start=1)
     ]

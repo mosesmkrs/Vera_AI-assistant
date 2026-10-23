@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     embedding_model_name: str = "intfloat/multilingual-e5-base"
     chunk_size_tokens: int = 400
     chunk_overlap_tokens: int = 50
+    evidence_confidence_threshold: float = 0.65
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

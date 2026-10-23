@@ -19,7 +19,7 @@ Document status and replacement history are part of the design. A newer document
 
 ## Project status
 
-Development is proceeding in stages. **Stages 1–4 are implemented at the backend-module level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, a health endpoint, an approval-gated ingestion module, and separate keyword, vector, and hybrid retrieval methods. Admin APIs and screens that perform approval are planned for Stage 7; evidence validation, grounded answering, human escalation workflows, and notifications are future stages.
+Development is proceeding in stages. **Stages 1–5 are implemented at the backend-module level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, a health endpoint, an approval-gated ingestion module, keyword, vector, and hybrid retrieval, and evidence validation. Admin APIs and screens that perform approval are planned for Stage 7. The validated evidence module is not yet wired into a student question endpoint or answer-generation flow; those are subsequent stages.
 
 ## Current architecture
 
@@ -40,6 +40,8 @@ The database foundation includes:
 The ingestion module accepts PDF and UTF-8 `.txt` files or typed text. Pending documents retain extracted/source text for review. Calling the shared indexing function requires an active document with approval metadata; successful indexing writes linked chunks and embeddings, then clears the pending text. PDF uploads are text-extracted only; scanned-image OCR and object-storage upload are not implemented yet.
 
 The retrieval module exposes keyword search using PostgreSQL full-text search, embedding search using pgvector cosine similarity, and hybrid search using Reciprocal Rank Fusion. All three return ranked chunks with document citation metadata and filter out inactive, not-yet-effective, and expired documents. They are backend functions; no student question API is wired to them yet.
+
+The evidence validation module rechecks each retrieved chunk against its stored document, including approval status and effective/expiry dates. It estimates a retrieval confidence score, marks low-confidence results as insufficient, and flags the two highest-ranked results from different authority offices as conflicting unless their documents are linked by supersession. The confidence score is a retrieval heuristic, not a guarantee that the answer is factually correct; its threshold is configurable and should be calibrated against real questions and reviewed sources. The module returns an assessment for a later question-answering flow to use; it does not generate answers or create escalation logs on its own.
 
 To compare all three methods on your own PDF or UTF-8 `.txt` files, use the temporary smoke-test script below. It creates active test documents in an isolated database schema, uses the configured real embedding model, prints ranked source passages for each query, and removes the temporary schema when finished. It does not add the files to your normal application data.
 
@@ -107,6 +109,7 @@ With the virtual environment active and the database running:
 ```powershell
 python -m pytest backend/tests/test_ingestion.py -q
 python -m pytest backend/tests/test_retrieval.py -q
+python -m pytest backend/tests/test_validation.py -q
 python -m pytest -q
 ruff check backend/app backend/tests
 ```
@@ -141,6 +144,7 @@ Configuration is managed from the root `.env` file. The current variables are:
 | `JWT_SECRET` | Secret reserved for authentication/session features |
 | `EMBEDDING_MODEL_NAME` | Sentence-transformer model used for document embeddings |
 | `CHUNK_SIZE_TOKENS`, `CHUNK_OVERLAP_TOKENS` | Chunk sizing for ingestion |
+| `EVIDENCE_CONFIDENCE_THRESHOLD` | Minimum retrieval confidence for evidence to be considered sufficient (default `0.65`) |
 
 Provider keys can remain empty while working on the current foundation. Replace development secrets before using the project in a deployed environment.
 

@@ -48,6 +48,6 @@ async def keyword_search(
     result = await session.execute(statement)
     rows = result.all()
     return [
-        scored_chunk(chunk, document, float(search_rank), rank_index)
+        scored_chunk(chunk, document, float(search_rank), rank_index, "keyword")
         for rank_index, (chunk, document, search_rank) in enumerate(rows, start=1)
     ]
