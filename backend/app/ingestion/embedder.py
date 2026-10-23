@@ -32,3 +32,16 @@ def embed_passages(texts: list[str], model_name: str | None = None) -> list[list
         show_progress_bar=False,
     )
     return vectors.tolist()
+
+
+def embed_query(query: str, model_name: str | None = None) -> list[float]:
+    """Embed a search query with multilingual-e5's required query prefix."""
+    name = model_name or settings.embedding_model_name
+    model = _load_embedding_model(name)
+    vectors = model.encode(
+        [f"query: {query}"],
+        normalize_embeddings=True,
+        convert_to_numpy=True,
+        show_progress_bar=False,
+    )
+    return vectors[0].tolist()

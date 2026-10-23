@@ -19,7 +19,7 @@ Document status and replacement history are part of the design. A newer document
 
 ## Project status
 
-Development is proceeding in stages. **Stages 1–3 are implemented at the backend-module level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, a health endpoint, and an ingestion module for PDF/plain-text parsing, direct text intake, overlapping token chunks, and multilingual embeddings. Ingestion is approval-gated. Admin APIs and screens that perform the approval transition are planned for Stage 7; retrieval, grounded answering, human escalation workflows, and notifications are also future stages.
+Development is proceeding in stages. **Stages 1–4 are implemented at the backend-module level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, a health endpoint, an approval-gated ingestion module, and separate keyword, vector, and hybrid retrieval methods. Admin APIs and screens that perform approval are planned for Stage 7; evidence validation, grounded answering, human escalation workflows, and notifications are future stages.
 
 ## Current architecture
 
@@ -38,6 +38,19 @@ The database foundation includes:
 - `questions_log` for questions, evidence status, escalation details, answers, and notification state
 
 The ingestion module accepts PDF and UTF-8 `.txt` files or typed text. Pending documents retain extracted/source text for review. Calling the shared indexing function requires an active document with approval metadata; successful indexing writes linked chunks and embeddings, then clears the pending text. PDF uploads are text-extracted only; scanned-image OCR and object-storage upload are not implemented yet.
+
+The retrieval module exposes keyword search using PostgreSQL full-text search, embedding search using pgvector cosine similarity, and hybrid search using Reciprocal Rank Fusion. All three return ranked chunks with document citation metadata and filter out inactive, not-yet-effective, and expired documents. They are backend functions; no student question API is wired to them yet.
+
+To compare all three methods on your own PDF or UTF-8 `.txt` files, use the temporary smoke-test script below. It creates active test documents in an isolated database schema, uses the configured real embedding model, prints ranked source passages for each query, and removes the temporary schema when finished. It does not add the files to your normal application data.
+
+```powershell
+python backend/scripts/retrieval_smoke_test.py `
+  --files "C:\path\to\academic-policy.pdf" "C:\path\to\registration-guidance.txt" `
+  --query "Can I register after the deadline?" `
+  --query "Which office reviews registration extensions?"
+```
+
+Review whether the expected source appears near the top and whether its passage actually supports the question. First use several questions whose answers you can verify in the source documents. A successful search result alone does not establish that an answer is correct; answer validation is a later stage.
 
 These tables establish the data model. They do not imply that the user interfaces or workflows for managing them are already available.
 
@@ -93,6 +106,7 @@ With the virtual environment active and the database running:
 
 ```powershell
 python -m pytest backend/tests/test_ingestion.py -q
+python -m pytest backend/tests/test_retrieval.py -q
 python -m pytest -q
 ruff check backend/app backend/tests
 ```
@@ -102,6 +116,10 @@ pending document intake, approval gating, embedding persistence, and cleanup of
 pending text. They use a deterministic test tokenizer and embedding function,
 so they do not download model weights. The PostgreSQL-backed test creates and
 removes an isolated schema in the configured test database.
+
+Run the retrieval tests with `python -m pytest backend/tests/test_retrieval.py -q`.
+They use a temporary schema and supplied query vectors, so they do not download
+the embedding model. The real-model smoke test is separate, as shown above.
 
 Check the current database migration revision with:
 

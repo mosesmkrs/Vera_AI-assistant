@@ -29,7 +29,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 class CharacterTokenizer:
-    def encode(self, value: str, *, add_special_tokens: bool = False) -> list[int]:
+    def encode(
+        self,
+        value: str,
+        *,
+        add_special_tokens: bool = False,
+        verbose: bool = True,
+    ) -> list[int]:
         return [ord(character) for character in value]
 
     def decode(

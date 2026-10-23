@@ -5,7 +5,13 @@ from app.ingestion.parser import clean_text
 
 
 class Tokenizer(Protocol):
-    def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]: ...
+    def encode(
+        self,
+        text: str,
+        *,
+        add_special_tokens: bool = False,
+        verbose: bool = True,
+    ) -> list[int]: ...
 
     def decode(
         self,
@@ -35,7 +41,7 @@ def chunk_text(
     if not normalized:
         return []
 
-    token_ids = tokenizer.encode(normalized, add_special_tokens=False)
+    token_ids = tokenizer.encode(normalized, add_special_tokens=False, verbose=False)
     if not token_ids:
         return []
 
