@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     email_api_key: str = ""
     jwt_secret: str = "development-only-change-me"
+    embedding_model_name: str = "intfloat/multilingual-e5-base"
+    chunk_size_tokens: int = 400
+    chunk_overlap_tokens: int = 50
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

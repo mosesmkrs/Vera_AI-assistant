@@ -19,7 +19,7 @@ Document status and replacement history are part of the design. A newer document
 
 ## Project status
 
-Development is proceeding in stages. **Stage 1 (project foundation) and Stage 2 (database foundation) are implemented.** The current repository provides the backend scaffold, configuration, PostgreSQL/pgvector setup, SQLAlchemy models, an Alembic migration, and a health endpoint. It does not yet implement document upload and approval screens, document processing and embedding jobs, retrieval-augmented answering, human escalation workflows, or notification delivery. Those are future stages.
+Development is proceeding in stages. **Stages 1–3 are implemented at the backend-module level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, a health endpoint, and an ingestion module for PDF/plain-text parsing, direct text intake, overlapping token chunks, and multilingual embeddings. Ingestion is approval-gated. Admin APIs and screens that perform the approval transition are planned for Stage 7; retrieval, grounded answering, human escalation workflows, and notifications are also future stages.
 
 ## Current architecture
 
@@ -36,6 +36,8 @@ The database foundation includes:
 - `documents` for source metadata, approval state, expiry, and supersession history
 - `document_chunks` for document passages and their vector embeddings
 - `questions_log` for questions, evidence status, escalation details, answers, and notification state
+
+The ingestion module accepts PDF and UTF-8 `.txt` files or typed text. Pending documents retain extracted/source text for review. Calling the shared indexing function requires an active document with approval metadata; successful indexing writes linked chunks and embeddings, then clears the pending text. PDF uploads are text-extracted only; scanned-image OCR and object-storage upload are not implemented yet.
 
 These tables establish the data model. They do not imply that the user interfaces or workflows for managing them are already available.
 
@@ -90,9 +92,16 @@ docker compose down
 With the virtual environment active and the database running:
 
 ```powershell
+python -m pytest backend/tests/test_ingestion.py -q
 python -m pytest -q
 ruff check backend/app backend/tests
 ```
+
+The ingestion tests exercise PDF and plain-text extraction, overlapping chunks,
+pending document intake, approval gating, embedding persistence, and cleanup of
+pending text. They use a deterministic test tokenizer and embedding function,
+so they do not download model weights. The PostgreSQL-backed test creates and
+removes an isolated schema in the configured test database.
 
 Check the current database migration revision with:
 
@@ -112,6 +121,8 @@ Configuration is managed from the root `.env` file. The current variables are:
 | `LLM_API_KEY` | Future language-model provider integration |
 | `EMAIL_API_KEY` | Future email or notification provider integration |
 | `JWT_SECRET` | Secret reserved for authentication/session features |
+| `EMBEDDING_MODEL_NAME` | Sentence-transformer model used for document embeddings |
+| `CHUNK_SIZE_TOKENS`, `CHUNK_OVERLAP_TOKENS` | Chunk sizing for ingestion |
 
 Provider keys can remain empty while working on the current foundation. Replace development secrets before using the project in a deployed environment.
 
@@ -121,6 +132,7 @@ Provider keys can remain empty while working on the current foundation. Replace 
 backend/
   app/
     db/              SQLAlchemy models, async session, and Alembic migrations
+    ingestion/       File parsing, direct intake, chunking, and embedding pipeline
     main.py          FastAPI application and health endpoint
     config.py        Application settings loaded from .env/environment
   tests/             Backend tests

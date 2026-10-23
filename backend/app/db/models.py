@@ -81,6 +81,7 @@ class Document(Base):
     authority_office: Mapped[str] = mapped_column(String(200), nullable=False)
     source_type: Mapped[str] = mapped_column(String(20), nullable=False)
     storage_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pending_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     publication_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     effective_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
     expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
