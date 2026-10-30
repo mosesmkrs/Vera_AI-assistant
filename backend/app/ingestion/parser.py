@@ -1,4 +1,5 @@
 import re
+from datetime import date, datetime
 from io import BytesIO
 
 from pypdf import PdfReader
@@ -15,6 +16,24 @@ class EmptyDocumentError(ValueError):
 def clean_text(text: str) -> str:
     """Normalize whitespace while preserving the extracted wording."""
     return re.sub(r"\s+", " ", text).strip()
+
+
+def extract_effective_date(text: str) -> date | None:
+    """Read a simple `Effective date:` value from extracted document text."""
+    match = re.search(
+        r"\bEffective\s+date\s*:\s*(\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+        text,
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    raw_value = match.group(1)
+    for date_format in ("%Y-%m-%d", "%d %B %Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(raw_value, date_format).date()
+        except ValueError:
+            continue
+    return None
 
 
 def parse_uploaded_file(filename: str, content: bytes) -> str:

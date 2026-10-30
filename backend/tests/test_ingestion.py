@@ -12,6 +12,7 @@ from app.ingestion.direct_entry import create_pending_manual_document
 from app.ingestion.parser import (
     EmptyDocumentError,
     UnsupportedDocumentError,
+    extract_effective_date,
     parse_uploaded_file,
 )
 from app.ingestion.pipeline import (
@@ -82,6 +83,11 @@ def test_parser_extracts_pdf_and_plain_text() -> None:
     assert parse_uploaded_file("policy.pdf", make_pdf_with_text("Registration opens Monday.")) == (
         "Registration opens Monday."
     )
+    assert extract_effective_date("Policy | Effective date: 14 September 2026") == datetime(
+        2026, 9, 14
+    ).date()
+    assert extract_effective_date("Effective date: 2026-09-01") == datetime(2026, 9, 1).date()
+    assert extract_effective_date("No effective date is stated") is None
 
 
 def test_parser_rejects_unsupported_and_empty_documents() -> None:
@@ -148,12 +154,16 @@ async def _exercise_ingestion() -> None:
                 authority_office="Registrar",
                 authored_by=admin_id,
                 filename="registration.txt",
-                content=b"Registration extensions are reviewed by the Registrar.",
+                content=(
+                    b"Policy. Effective date: 14 September 2026. "
+                    b"Registration extensions are reviewed by the Registrar."
+                ),
             )
 
             assert manual.status == uploaded.status == "pending"
             assert manual.pending_content is not None
             assert uploaded.pending_content is not None
+            assert uploaded.effective_date == datetime(2026, 9, 14).date()
             assert await session.scalar(select(func.count()).select_from(DocumentChunk)) == 0
 
             with pytest.raises(ValueError, match="Only approved active documents"):

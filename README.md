@@ -19,7 +19,7 @@ Document status and replacement history are part of the design. A newer document
 
 ## Project status
 
-Development is proceeding in stages. **Stages 1–6 are implemented at the backend-module level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, a health endpoint, an approval-gated ingestion module, keyword, vector, and hybrid retrieval, evidence validation, and a headless student question endpoint with grounded answer generation and abstention. Admin APIs and screens for approving content and resolving escalations are planned for Stage 7.
+Development is proceeding in stages. **Stages 1–7 are implemented at the backend-module/API level.** The repository provides the backend scaffold, PostgreSQL/pgvector setup, SQLAlchemy models and migrations, an approval-gated ingestion module, three retrieval strategies, evidence validation, grounded student answers with abstention, and JWT-protected admin workflows for content review and escalated questions. The frontend and evaluation harness remain future stages.
 
 ## Current architecture
 
@@ -39,13 +39,13 @@ The database foundation includes:
 
 The ingestion module accepts PDF and UTF-8 `.txt` files or typed text. Pending documents retain extracted/source text for review. Calling the shared indexing function requires an active document with approval metadata; successful indexing writes linked chunks and embeddings, then clears the pending text. PDF uploads are text-extracted only; scanned-image OCR and object-storage upload are not implemented yet.
 
-The retrieval module exposes keyword search using PostgreSQL full-text search, embedding search using pgvector cosine similarity, and hybrid search using Reciprocal Rank Fusion. All three return ranked chunks with document citation metadata and filter out inactive, not-yet-effective, and expired documents. They are backend functions; no student question API is wired to them yet.
+The retrieval module exposes keyword search using PostgreSQL full-text search, embedding search using pgvector cosine similarity, and hybrid search using Reciprocal Rank Fusion. All three return ranked chunks with document citation metadata and filter out inactive, not-yet-effective, and expired documents. The Stage 6 `/ask` endpoint calls hybrid search before evidence validation.
 
-The evidence validation module rechecks each retrieved chunk against its stored document, including approval status and effective/expiry dates. It estimates a retrieval confidence score, marks low-confidence results as insufficient, and flags the two highest-ranked results from different authority offices as conflicting unless their documents are linked by supersession. The confidence score is a retrieval heuristic, not a guarantee that the answer is factually correct; its threshold is configurable and should be calibrated against real questions and reviewed sources. The module returns an assessment for a later question-answering flow to use; it does not generate answers or create escalation logs on its own.
+The evidence validation module rechecks each retrieved chunk against its stored document, including approval status and effective/expiry dates. It estimates a retrieval confidence score, marks low-confidence results as insufficient, and flags the two highest-ranked results from different authority offices as conflicting unless their documents are linked by supersession. The confidence score is a retrieval heuristic, not a guarantee that the answer is factually correct; its threshold is configurable and should be calibrated against real questions and reviewed sources. The `/ask` pipeline uses the assessment to decide whether to generate an answer or log and escalate the question.
 
 `POST /ask` runs hybrid retrieval followed by evidence validation. When evidence is sufficient, Vera calls the configured LLM at temperature zero and returns its answer, confidence status, and source excerpts as citations. When evidence is missing, weak, or conflicting, Vera abstains, records the question in `questions_log`, and marks it escalated without calling the LLM. The optional `student_contact` is stored only on that question-log row for the later notification workflow. The default OpenAI model is `gpt-6-luna`; the client sets its reasoning effort to `none` so temperature zero remains supported. Set `LLM_API_KEY`, `LLM_PROVIDER` (`openai` or `anthropic`), and `LLM_MODEL` before asking questions that have sufficient evidence; the missing-evidence path does not require an LLM key.
 
-To try the answerable path before Stage 7 admin endpoints exist, a local-only helper seeds one clearly labeled approved test document into the configured database. It uses the configured embedding model and removes the test document, chunks, test admin (when unused), and any answer logs linked to that document when you run `cleanup`:
+For a quick local answer-path check, a helper seeds one clearly labeled approved test document into the configured database. It uses the configured embedding model and removes the test document, chunks, test admin (when unused), and any answer logs linked to that document when you run `cleanup`:
 
 ```powershell
 python backend/scripts/stage6_test_data.py seed
@@ -54,6 +54,37 @@ python backend/scripts/stage6_test_data.py cleanup
 ```
 
 If the embedding model is already cached but Hugging Face is unreachable, set `$env:HF_HUB_OFFLINE = '1'` and `$env:TRANSFORMERS_OFFLINE = '1'` in that terminal before running the seed command. The configured LLM provider still needs to be reachable to receive a generated answer.
+
+### Admin API (Stage 7)
+
+Apply migrations, then create the first admin account. The script prompts for the password without putting it in shell history:
+
+```powershell
+alembic -c backend/alembic.ini upgrade head
+python backend/scripts/create_admin.py --name "University Admin" --email "admin@example.edu"
+```
+
+The admin signs in at `POST /admin/auth/login` to receive a bearer token. Use that token in the `Authorization: Bearer <token>` header for admin routes. An admin can create assistant accounts at `POST /admin/users`. For example, log in and enter typed content:
+
+```powershell
+$loginBody = @{ email = "admin@example.edu"; password = "your-password" } | ConvertTo-Json
+$login = Invoke-RestMethod -Method Post -Uri http://localhost:8000/admin/auth/login `
+  -ContentType 'application/json' -Body $loginBody
+$headers = @{ Authorization = "Bearer $($login.access_token)" }
+$content = @{
+  title = "Registration extension policy"
+  authority_office = "Registrar"
+  content = "Students must submit the Registration Extension Form to the Registrar."
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8000/admin/content `
+  -Headers $headers -ContentType 'application/json' -Body $content
+```
+
+Admins' own content is approved and indexed on submission. Assistant submissions remain pending; admins review them at `GET /admin/content/pending` and approve or reject them. File uploads use `POST /admin/content/upload` with the file bytes as the request body, `X-Filename` header, and `title` and `authority_office` query parameters; PDF and UTF-8 `.txt` are supported. Escalated questions appear at `GET /admin/questions/unanswered`. Assistants can submit answers there; those remain pending until admin approval. Admin-authored answers publish immediately. Student contact addresses are not included in the queue response.
+
+Published staff answers are indexed together with the original question so similar future questions can find the approved response. To update staff answers published before this behavior was added, preview the backfill with `python backend/scripts/backfill_staff_answer_context.py`; run it with `--apply` to rebuild those answers' chunks and embeddings.
+
+When a question is resolved, Vera sends an email through Resend if the question has a student email and `EMAIL_API_KEY` plus a verified `EMAIL_FROM` sender are configured. The question record stores notification status (`sent`, `failed`, or `not_applicable`).
 
 Example request:
 
@@ -74,7 +105,7 @@ python backend/scripts/retrieval_smoke_test.py `
 
 Review whether the expected source appears near the top and whether its passage actually supports the question. First use several questions whose answers you can verify in the source documents. A successful search result alone does not establish that an answer is correct; answer validation is a later stage.
 
-These tables establish the data model. They do not imply that the user interfaces or workflows for managing them are already available.
+The student and admin workflows are available through the API; no frontend has been built yet.
 
 ## Getting started (Windows PowerShell)
 
@@ -162,7 +193,8 @@ Configuration is managed from the root `.env` file. The current variables are:
 | `DATABASE_URL_DOCKER` | Database URL for the API container |
 | `LLM_API_KEY` | API key for the selected answer-generation provider |
 | `LLM_PROVIDER`, `LLM_MODEL` | Answer-generation provider (`openai` or `anthropic`) and model name |
-| `EMAIL_API_KEY` | Future email or notification provider integration |
+| `EMAIL_API_KEY` | Resend API key used for answer-resolution emails |
+| `EMAIL_FROM` | Verified sender identity used for resolution emails via Resend |
 | `JWT_SECRET` | Secret reserved for authentication/session features |
 | `EMBEDDING_MODEL_NAME` | Sentence-transformer model used for document embeddings |
 | `CHUNK_SIZE_TOKENS`, `CHUNK_OVERLAP_TOKENS` | Chunk sizing for ingestion |

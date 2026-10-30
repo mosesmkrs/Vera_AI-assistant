@@ -33,10 +33,15 @@ async def _exercise_validation() -> None:
         session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
         today = date.today()
         admin_id = uuid4()
-        document_ids = {label: uuid4() for label in ("registrar", "finance", "expired", "future")}
+        document_ids = {
+            label: uuid4()
+            for label in ("registrar", "finance", "conflict", "expired", "future")
+        }
         chunk_ids = {
             label: uuid4()
-            for label in ("registrar_top", "registrar_second", "finance", "expired", "future")
+            for label in (
+                "registrar_top", "registrar_second", "finance", "conflict", "expired", "future"
+            )
         }
 
         async with session_factory() as session:
@@ -56,6 +61,9 @@ async def _exercise_validation() -> None:
             finance = _document(
                 document_ids["finance"], admin_id, "Finance", today - timedelta(days=10)
             )
+            conflict_document = _document(
+                document_ids["conflict"], admin_id, "Examinations Office", today - timedelta(days=10)
+            )
             expired = _document(
                 document_ids["expired"],
                 admin_id,
@@ -69,7 +77,7 @@ async def _exercise_validation() -> None:
                 "Registrar",
                 today + timedelta(days=1),
             )
-            session.add_all([registrar, finance, expired, future])
+            session.add_all([registrar, finance, conflict_document, expired, future])
             await session.flush()
 
             chunks = [
@@ -77,21 +85,28 @@ async def _exercise_validation() -> None:
                     id=chunk_ids["registrar_top"],
                     document_id=registrar.id,
                     chunk_index=0,
-                    content="Current registration extension policy.",
+                    content="Supplementary examination fee: KES 2,500 per paper.",
                     embedding=[0.0] * 768,
                 ),
                 DocumentChunk(
                     id=chunk_ids["registrar_second"],
                     document_id=registrar.id,
                     chunk_index=1,
-                    content="Current registration policy details.",
+                    content="A student with 35-39% may sit one supplementary examination.",
                     embedding=[0.0] * 768,
                 ),
                 DocumentChunk(
                     id=chunk_ids["finance"],
                     document_id=finance.id,
                     chunk_index=0,
-                    content="Finance office registration payment policy.",
+                    content="Supplementary examination costs KES 2,500 per paper.",
+                    embedding=[0.0] * 768,
+                ),
+                DocumentChunk(
+                    id=chunk_ids["conflict"],
+                    document_id=conflict_document.id,
+                    chunk_index=0,
+                    content="Supplementary examination fee: KES 3,000 per paper.",
                     embedding=[0.0] * 768,
                 ),
                 DocumentChunk(
@@ -131,7 +146,7 @@ async def _exercise_validation() -> None:
                 session,
                 [
                     _candidate(chunk_by_id[chunk_ids["registrar_top"]], 0.20, 1),
-                    _candidate(chunk_by_id[chunk_ids["registrar_second"]], 0.19, 2),
+                    _candidate(chunk_by_id[chunk_ids["finance"]], 0.19, 2),
                 ],
                 today=today,
             )
@@ -156,6 +171,19 @@ async def _exercise_validation() -> None:
                     _candidate(chunk_by_id[chunk_ids["registrar_top"]], 0.95, 1),
                     _candidate(chunk_by_id[chunk_ids["finance"]], 0.94, 2),
                 ],
+                question="How much does a supplementary examination cost?",
+                today=today,
+            )
+            assert conflict.evidence_status == "sufficient"
+            assert conflict.escalation_reason is None
+
+            conflict = await validate_evidence(
+                session,
+                [
+                    _candidate(chunk_by_id[chunk_ids["registrar_top"]], 0.95, 1),
+                    _candidate(chunk_by_id[chunk_ids["conflict"]], 0.94, 2),
+                ],
+                question="How much does a supplementary examination cost?",
                 today=today,
             )
             assert conflict.evidence_status == "conflicting"

@@ -21,7 +21,8 @@ async def _exercise_sufficient_evidence() -> None:
         assert top_k == 5
         return [chunk]
 
-    async def validator(_session, candidates):
+    async def validator(_session, candidates, *, question):
+        assert question == "How do I request a registration extension?"
         assert candidates == [chunk]
         return EvidenceAssessment("sufficient", None, 0.87, (chunk,))
 
@@ -61,7 +62,8 @@ async def _exercise_no_evidence() -> None:
     async def retriever(_session, _question, _top_k):
         return []
 
-    async def validator(_session, candidates):
+    async def validator(_session, candidates, *, question):
+        assert question == "Where can I find an undocumented exception?"
         assert not candidates
         return EvidenceAssessment("insufficient", "no_evidence", 0.0, ())
 

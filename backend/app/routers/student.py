@@ -9,11 +9,12 @@ from app.generation.llm_client import LLMError
 from app.services.answer_pipeline import AnswerResult, answer_question
 
 router = APIRouter(tags=["student"])
+StudentContact = Annotated[str, Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
 
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=5000)
-    student_contact: str | None = Field(default=None, max_length=320)
+    student_contact: StudentContact | None = Field(default=None, max_length=320)
 
     @field_validator("question")
     @classmethod

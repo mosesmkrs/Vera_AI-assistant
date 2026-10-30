@@ -48,7 +48,7 @@ async def answer_question(
 ) -> AnswerResult:
     normalized_question = question.strip()
     candidates = await retriever(session, normalized_question, top_k)
-    assessment = await validator(session, candidates)
+    assessment = await validator(session, candidates, question=normalized_question)
     citations = tuple(_citation(index, chunk) for index, chunk in enumerate(assessment.chunks, 1))
 
     if not assessment.can_answer:

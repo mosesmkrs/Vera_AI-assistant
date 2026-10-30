@@ -9,7 +9,7 @@ from app.config import settings
 from app.db.models import EMBEDDING_DIMENSION, Document, DocumentChunk
 from app.ingestion.chunker import Tokenizer, chunk_text
 from app.ingestion.embedder import embed_passages, load_tokenizer
-from app.ingestion.parser import parse_uploaded_file
+from app.ingestion.parser import extract_effective_date, parse_uploaded_file
 
 
 async def create_pending_uploaded_document(
@@ -35,7 +35,7 @@ async def create_pending_uploaded_document(
         pending_content=extracted_text,
         authored_by=authored_by,
         publication_date=publication_date,
-        effective_date=effective_date or date.today(),
+        effective_date=effective_date or extract_effective_date(extracted_text) or date.today(),
         expiry_date=expiry_date,
         status="pending",
     )
