@@ -3,7 +3,6 @@ import json
 
 import httpx
 import pytest
-
 from app.config import settings
 from app.generation.llm_client import LLMError, generate_answer, verify_answer_support
 from app.retrieval.base import ScoredChunk
