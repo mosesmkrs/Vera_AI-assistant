@@ -140,7 +140,7 @@ async def _exercise_validation() -> None:
             )
             assert sufficient.evidence_status == "sufficient"
             assert sufficient.can_answer
-            assert sufficient.confidence_score >= settings.evidence_confidence_threshold
+            assert sufficient.retrieval_score >= settings.evidence_confidence_threshold
 
             low_confidence = await validate_evidence(
                 session,
@@ -162,7 +162,7 @@ async def _exercise_validation() -> None:
                 today=today,
             )
             assert rejected_dates.evidence_status == "insufficient"
-            assert rejected_dates.confidence_score == 0.0
+            assert rejected_dates.retrieval_score == 0.0
             assert not rejected_dates.chunks
 
             conflict = await validate_evidence(

@@ -176,6 +176,10 @@ class QuestionLog(Base):
             "retrieval_confidence IS NULL OR (retrieval_confidence >= 0 AND retrieval_confidence <= 1)",
             name="ck_questions_log_retrieval_confidence",
         ),
+        CheckConstraint(
+            "answer_confidence IS NULL OR (answer_confidence >= 0 AND answer_confidence <= 1)",
+            name="ck_questions_log_answer_confidence",
+        ),
         Index("ix_questions_log_escalated_created", "escalated", "created_at"),
         Index("ix_questions_log_notification_status", "notification_status"),
     )
@@ -184,6 +188,9 @@ class QuestionLog(Base):
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     student_contact: Mapped[str | None] = mapped_column(String(320), nullable=True)
     retrieval_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    answer_confidence: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="Grounding verifier's answer support score"
+    )
     evidence_status: Mapped[str] = mapped_column(String(20), nullable=False)
     escalation_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
     escalated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

@@ -39,7 +39,14 @@ class AskResponse(BaseModel):
     evidence_status: Literal["sufficient", "insufficient", "conflicting"]
     escalation_reason: Literal["no_evidence", "conflicting_evidence"] | None
     escalated: bool
-    confidence_score: float = Field(ge=0, le=1)
+    confidence_score: float = Field(
+        ge=0,
+        le=1,
+        description=(
+            "Estimated answer support from the grounding check; zero when the answer "
+            "is insufficient or escalated. This is distinct from retrieval ranking."
+        ),
+    )
     confidence_status: Literal["high", "medium", "low"]
     citations: list[CitationResponse]
 

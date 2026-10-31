@@ -19,7 +19,7 @@ EscalationReason = Literal["no_evidence", "conflicting_evidence"] | None
 class EvidenceAssessment:
     evidence_status: EvidenceStatus
     escalation_reason: EscalationReason
-    confidence_score: float
+    retrieval_score: float
     chunks: tuple[ScoredChunk, ...]
 
     @property
@@ -93,30 +93,30 @@ async def validate_evidence(
         return _insufficient("no_evidence")
 
     selected = _select_evidence_chunks(valid)
-    confidence = _confidence_score(selected, rrf_k)
+    retrieval_score = _retrieval_score(selected, rrf_k)
     if _has_cross_office_conflict(selected, documents, question=question or ""):
         return EvidenceAssessment(
             evidence_status="conflicting",
             escalation_reason="conflicting_evidence",
-            confidence_score=confidence,
+            retrieval_score=retrieval_score,
             chunks=tuple(selected),
         )
-    if confidence < threshold:
+    if retrieval_score < threshold:
         return EvidenceAssessment(
             evidence_status="insufficient",
             escalation_reason="no_evidence",
-            confidence_score=confidence,
+            retrieval_score=retrieval_score,
             chunks=tuple(selected),
         )
     return EvidenceAssessment(
         evidence_status="sufficient",
         escalation_reason=None,
-        confidence_score=confidence,
+        retrieval_score=retrieval_score,
         chunks=tuple(selected),
     )
 
 
-def _confidence_score(chunks: list[ScoredChunk], rrf_k: int) -> float:
+def _retrieval_score(chunks: list[ScoredChunk], rrf_k: int) -> float:
     best_by_document: dict[UUID, ScoredChunk] = {}
     for chunk in chunks:
         best_by_document.setdefault(chunk.document_id, chunk)
@@ -257,6 +257,6 @@ def _insufficient(reason: Literal["no_evidence"]) -> EvidenceAssessment:
     return EvidenceAssessment(
         evidence_status="insufficient",
         escalation_reason=reason,
-        confidence_score=0.0,
+        retrieval_score=0.0,
         chunks=(),
     )

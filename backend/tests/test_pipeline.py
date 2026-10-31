@@ -2,6 +2,7 @@ import asyncio
 from datetime import date
 from uuid import uuid4
 
+from app.generation.llm_client import AnswerSupport
 from app.retrieval.base import ScoredChunk
 from app.services.answer_pipeline import answer_question
 from app.validation.evidence import EvidenceAssessment
@@ -30,6 +31,12 @@ async def _exercise_sufficient_evidence() -> None:
         generated.append((question, evidence))
         return "Submit the extension form to the Registrar [S1]."
 
+    async def verifier(question, answer, evidence):
+        assert question == "How do I request a registration extension?"
+        assert answer == "Submit the extension form to the Registrar [S1]."
+        assert evidence == (chunk,)
+        return AnswerSupport(supported=True, support_score=0.87)
+
     result = await answer_question(
         session,
         "  How do I request a registration extension?  ",
@@ -37,6 +44,7 @@ async def _exercise_sufficient_evidence() -> None:
         retriever=retriever,
         validator=validator,
         generator=generator,
+        verifier=verifier,
     )
 
     assert result.evidence_status == "sufficient"
@@ -49,6 +57,49 @@ async def _exercise_sufficient_evidence() -> None:
     assert session.rows[0].escalated is False
     assert session.rows[0].answer_document_id == chunk.document_id
     assert session.commit_count == 1
+    assert session.rows[0].answer_confidence == 0.87
+
+
+def test_answer_pipeline_escalates_when_generated_answer_is_not_supported() -> None:
+    asyncio.run(_exercise_unsupported_generated_answer())
+
+
+async def _exercise_unsupported_generated_answer() -> None:
+    session = _FakeSession()
+    chunk = _chunk()
+
+    async def retriever(_session, _question, _top_k):
+        return [chunk]
+
+    async def validator(_session, candidates, *, question):
+        assert candidates == [chunk]
+        assert question == "When are counselling sessions?"
+        return EvidenceAssessment("sufficient", None, 0.91, (chunk,))
+
+    async def generator(_question, _evidence):
+        return "The available information does not say [S1]."
+
+    async def verifier(_question, _answer, _evidence):
+        return AnswerSupport(supported=False, support_score=0.0)
+
+    result = await answer_question(
+        session,
+        "When are counselling sessions?",
+        retriever=retriever,
+        validator=validator,
+        generator=generator,
+        verifier=verifier,
+    )
+
+    assert result.evidence_status == "insufficient"
+    assert result.escalation_reason == "no_evidence"
+    assert result.escalated is True
+    assert result.confidence_score == 0.0
+    assert result.confidence_status == "low"
+    assert not result.citations
+    assert session.rows[0].escalated is True
+    assert session.rows[0].answer_confidence == 0.0
+    assert session.rows[0].retrieval_confidence == 0.91
 
 
 def test_answer_pipeline_escalates_without_calling_llm_when_evidence_is_missing() -> None:

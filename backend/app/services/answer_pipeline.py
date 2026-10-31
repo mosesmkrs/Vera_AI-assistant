@@ -1,11 +1,16 @@
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import QuestionLog
-from app.generation.llm_client import generate_answer
+from app.generation.llm_client import (
+    AnswerSupport,
+    LLMError,
+    generate_answer,
+    verify_answer_support,
+)
 from app.retrieval.base import ScoredChunk
 from app.retrieval.hybrid import hybrid_search
 from app.validation.evidence import EvidenceAssessment, validate_evidence
@@ -13,6 +18,7 @@ from app.validation.evidence import EvidenceAssessment, validate_evidence
 Retriever = Callable[..., Awaitable[list[ScoredChunk]]]
 Validator = Callable[..., Awaitable[EvidenceAssessment]]
 Generator = Callable[[str, tuple[ScoredChunk, ...]], Awaitable[str]]
+Verifier = Callable[[str, str, tuple[ScoredChunk, ...]], Awaitable[AnswerSupport]]
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,7 @@ async def answer_question(
     retriever: Retriever = hybrid_search,
     validator: Validator = validate_evidence,
     generator: Generator = generate_answer,
+    verifier: Verifier = verify_answer_support,
 ) -> AnswerResult:
     normalized_question = question.strip()
     candidates = await retriever(session, normalized_question, top_k)
@@ -59,29 +66,65 @@ async def answer_question(
             student_contact,
             assessment,
             answer=None,
+            answer_confidence=0.0,
         )
         return AnswerResult(
             answer=answer,
             evidence_status=assessment.evidence_status,
             escalation_reason=assessment.escalation_reason,
             escalated=True,
-            confidence_score=assessment.confidence_score,
+            confidence_score=0.0,
             confidence_status="low",
             citations=citations,
         )
 
-    # This is the only path that calls the model. The evidence gate above must pass.
+    # Retrieval is only a candidate gate. The generated answer must also pass
+    # an independent claim-support check before it can be returned as reliable.
     answer = await generator(normalized_question, assessment.chunks)
+    try:
+        support = await verifier(normalized_question, answer, assessment.chunks)
+    except LLMError:
+        support = AnswerSupport(supported=False, support_score=0.0)
+
+    if (
+        not support.supported
+        or support.support_score < settings.answer_confidence_medium_threshold
+    ):
+        failed_assessment = replace(
+            assessment,
+            evidence_status="insufficient",
+            escalation_reason="no_evidence",
+        )
+        answer = _abstention_message("insufficient")
+        await _record_question(
+            session,
+            normalized_question,
+            student_contact,
+            failed_assessment,
+            answer=None,
+            answer_confidence=0.0,
+        )
+        return AnswerResult(
+            answer=answer,
+            evidence_status="insufficient",
+            escalation_reason="no_evidence",
+            escalated=True,
+            confidence_score=0.0,
+            confidence_status="low",
+            citations=(),
+        )
+
     await _record_question(
         session,
         normalized_question,
         student_contact,
         assessment,
         answer=answer,
+        answer_confidence=support.support_score,
     )
-    if assessment.confidence_score >= 0.8:
+    if support.support_score >= settings.answer_confidence_high_threshold:
         confidence_status = "high"
-    elif assessment.confidence_score >= settings.evidence_confidence_threshold:
+    elif support.support_score >= settings.answer_confidence_medium_threshold:
         confidence_status = "medium"
     else:
         confidence_status = "low"
@@ -90,7 +133,7 @@ async def answer_question(
         evidence_status=assessment.evidence_status,
         escalation_reason=None,
         escalated=False,
-        confidence_score=assessment.confidence_score,
+        confidence_score=support.support_score,
         confidence_status=confidence_status,
         citations=citations,
     )
@@ -126,12 +169,14 @@ async def _record_question(
     assessment: EvidenceAssessment,
     *,
     answer: str | None,
+    answer_confidence: float,
 ) -> None:
     session.add(
         QuestionLog(
             query_text=question,
             student_contact=student_contact,
-            retrieval_confidence=assessment.confidence_score,
+            retrieval_confidence=assessment.retrieval_score,
+            answer_confidence=answer_confidence,
             evidence_status=assessment.evidence_status,
             escalation_reason=assessment.escalation_reason,
             escalated=not assessment.can_answer,

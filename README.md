@@ -84,7 +84,7 @@ Admins' own content is approved and indexed on submission. Assistant submissions
 
 Published staff answers are indexed together with the original question so similar future questions can find the approved response. To update staff answers published before this behavior was added, preview the backfill with `python backend/scripts/backfill_staff_answer_context.py`; run it with `--apply` to rebuild those answers' chunks and embeddings.
 
-When a question is resolved, Vera sends an email through Resend if the question has a student email and `EMAIL_API_KEY` plus a verified `EMAIL_FROM` sender are configured. The question record stores notification status (`sent`, `failed`, or `not_applicable`).
+When a question is resolved, Vera sends a branded HTML and plain-text email over SMTP if the question has a student email and the SMTP credentials plus `EMAIL_FROM` are configured. The sender display name defaults to `Vera`. For Gmail, enable 2-Step Verification, create an App Password, and use `smtp.gmail.com` on port `587` with STARTTLS. Enter the App Password without spaces. Set `EMAIL_SMTP_USE_SSL=true` only if using port `465`. Use a dedicated, unmonitored sender address for no-reply notifications; email clients cannot disable replying, but `EMAIL_REPLY_TO` controls where replies are directed. The question record stores notification status (`sent`, `failed`, or `not_applicable`); SMTP failures are recorded in the API logs.
 
 Example request:
 
@@ -106,6 +106,8 @@ python backend/scripts/retrieval_smoke_test.py `
 Review whether the expected source appears near the top and whether its passage actually supports the question. First use several questions whose answers you can verify in the source documents. A successful search result alone does not establish that an answer is correct; answer validation is a later stage.
 
 The student and admin workflows are available through the API; no frontend has been built yet.
+
+Generated answers pass a second grounding check that compares each answer claim with its cited excerpts and checks whether the question was fully answered. Unsupported or incomplete answers are withheld and escalated. The API `confidence_score` is the verifier's support estimate; retrieval ranking remains an internal retrieval signal. The initial score is an estimate, not a statistically calibrated probability. `ANSWER_CONFIDENCE_MEDIUM_THRESHOLD` and `ANSWER_CONFIDENCE_HIGH_THRESHOLD` control its labels.
 
 ## Getting started (Windows PowerShell)
 
@@ -193,12 +195,20 @@ Configuration is managed from the root `.env` file. The current variables are:
 | `DATABASE_URL_DOCKER` | Database URL for the API container |
 | `LLM_API_KEY` | API key for the selected answer-generation provider |
 | `LLM_PROVIDER`, `LLM_MODEL` | Answer-generation provider (`openai` or `anthropic`) and model name |
-| `EMAIL_API_KEY` | Resend API key used for answer-resolution emails |
-| `EMAIL_FROM` | Verified sender identity used for resolution emails via Resend |
+| `EMAIL_SMTP_HOST` | SMTP server (Gmail: `smtp.gmail.com`) |
+| `EMAIL_SMTP_PORT` | SMTP port (Gmail: `587` for STARTTLS or `465` for SSL) |
+| `EMAIL_SMTP_USERNAME` | Full Gmail address used to authenticate |
+| `EMAIL_SMTP_PASSWORD` | Google App Password; keep it secret and out of source control |
+| `EMAIL_SMTP_USE_SSL` | Set to `true` for implicit SSL on port `465`; otherwise Vera uses STARTTLS |
+| `EMAIL_FROM_NAME` | Sender display name (defaults to `Vera`) |
+| `EMAIL_FROM` | Sender address, normally the same Gmail address as `EMAIL_SMTP_USERNAME` |
+| `EMAIL_REPLY_TO` | Address that receives replies; set it to the dedicated no-reply sender for one-way notifications |
 | `JWT_SECRET` | Secret reserved for authentication/session features |
 | `EMBEDDING_MODEL_NAME` | Sentence-transformer model used for document embeddings |
 | `CHUNK_SIZE_TOKENS`, `CHUNK_OVERLAP_TOKENS` | Chunk sizing for ingestion |
-| `EVIDENCE_CONFIDENCE_THRESHOLD` | Minimum retrieval confidence for evidence to be considered sufficient (default `0.65`) |
+| `EVIDENCE_CONFIDENCE_THRESHOLD` | Minimum retrieval-ranking score for a passage set to enter answer generation (default `0.55`) |
+| `ANSWER_CONFIDENCE_MEDIUM_THRESHOLD` | Minimum verified answer-support score for an answer to be returned without escalation (default `0.65`) |
+| `ANSWER_CONFIDENCE_HIGH_THRESHOLD` | Verified answer-support score labeled high (default `0.85`) |
 
 Provider keys can remain empty while working on the current foundation. Replace development secrets before using the project in a deployed environment.
 

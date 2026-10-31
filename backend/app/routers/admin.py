@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, date, datetime
 from typing import Annotated, Literal
 from uuid import UUID
@@ -33,6 +34,7 @@ from app.ingestion.pipeline import (
 from app.notifications.email import EmailError, send_resolution_email
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 EmailContact = Annotated[str, Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
 CurrentAdmin = Annotated[AdminUser, Depends(get_current_admin)]
@@ -546,7 +548,10 @@ async def _notify_question(session: AsyncSession, question_id: UUID) -> str:
             question.query_text,
             answer_text,
         )
-    except EmailError:
+    except EmailError as exc:
+        logger.warning(
+            "Resolution email failed for question %s: %s", question.id, exc
+        )
         question.notification_status = "failed"
     else:
         question.notification_status = "sent"
